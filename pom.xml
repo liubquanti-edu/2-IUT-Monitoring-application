@@ -6,16 +6,22 @@
 
     <groupId>fr.iut</groupId>
     <artifactId>netmonitor</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.2.0-SNAPSHOT</version>
     <name>NetMonitor</name>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.11.4</junit.version>
+        <javafx.version>21.0.5</javafx.version>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -37,6 +43,14 @@
                 <version>3.5.0</version>
                 <configuration>
                     <mainClass>fr.iut.netmonitor.cli.Main</mainClass>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-maven-plugin</artifactId>
+                <version>0.0.8</version>
+                <configuration>
+                    <mainClass>fr.iut.netmonitor.gui.NetMonitorApp</mainClass>
                 </configuration>
             </plugin>
         </plugins>

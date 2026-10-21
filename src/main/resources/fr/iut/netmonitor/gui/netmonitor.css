@@ -1,0 +1,118 @@
+/* Feuille de style de NetMonitor */
+
+.root {
+    -fx-font-family: "Segoe UI", "Helvetica", sans-serif;
+    -fx-font-size: 13px;
+    -fx-background-color: #f4f6f8;
+}
+
+/* En-tête et menu */
+.header {
+    -fx-background-color: #1f2d3d;
+    -fx-padding: 10 18;
+}
+.app-title {
+    -fx-text-fill: white;
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+}
+.user-label {
+    -fx-text-fill: #d0d7de;
+}
+.nav {
+    -fx-background-color: #2c3e50;
+    -fx-padding: 6 12;
+    -fx-spacing: 6;
+}
+.nav .toggle-button, .nav .button {
+    -fx-background-color: transparent;
+    -fx-text-fill: white;
+    -fx-background-radius: 4;
+    -fx-padding: 6 14;
+}
+.nav .toggle-button:hover, .nav .button:hover {
+    -fx-background-color: #3a5068;
+}
+.nav .toggle-button:selected {
+    -fx-background-color: #4a6a8a;
+}
+
+/* Connexion */
+.login-root {
+    -fx-background-color: linear-gradient(to bottom right, #1f2d3d, #3d5a80);
+}
+.login-box {
+    -fx-background-color: white;
+    -fx-background-radius: 10;
+    -fx-padding: 30;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.3), 18, 0, 0, 4);
+}
+.login-title {
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+}
+.muted {
+    -fx-text-fill: #5c6b7a;
+}
+.error-label {
+    -fx-text-fill: #c62828;
+}
+
+/* Tableau de bord */
+.section-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+}
+.field-label {
+    -fx-font-weight: bold;
+}
+.tile {
+    -fx-background-color: white;
+    -fx-background-radius: 8;
+    -fx-border-color: #dde3ea;
+    -fx-border-radius: 8;
+    -fx-padding: 14 20;
+    -fx-min-width: 150;
+}
+.tile-value {
+    -fx-font-size: 30px;
+    -fx-font-weight: bold;
+}
+.tile-caption {
+    -fx-text-fill: #5c6b7a;
+}
+.tile-total .tile-value { -fx-text-fill: #1f2d3d; }
+.tile-up .tile-value { -fx-text-fill: #2e7d32; }
+.tile-warning .tile-value { -fx-text-fill: #ef6c00; }
+.tile-down .tile-value { -fx-text-fill: #c62828; }
+.tile-incidents .tile-value { -fx-text-fill: #6a1b9a; }
+
+/* Couleurs du camembert : ordre UP, WARNING, DOWN */
+.default-color0.chart-pie, .default-color0.pie-legend-symbol { -fx-pie-color: #2e7d32; -fx-background-color: #2e7d32; }
+.default-color1.chart-pie, .default-color1.pie-legend-symbol { -fx-pie-color: #ef6c00; -fx-background-color: #ef6c00; }
+.default-color2.chart-pie, .default-color2.pie-legend-symbol { -fx-pie-color: #c62828; -fx-background-color: #c62828; }
+
+
+/* États et gravités dans les tableaux */
+.status-UP { -fx-text-fill: #2e7d32; -fx-font-weight: bold; }
+.status-WARNING { -fx-text-fill: #ef6c00; -fx-font-weight: bold; }
+.status-DOWN { -fx-text-fill: #c62828; -fx-font-weight: bold; }
+.severity-LOW { -fx-text-fill: #546e7a; }
+.severity-MEDIUM { -fx-text-fill: #b28704; -fx-font-weight: bold; }
+.severity-HIGH { -fx-text-fill: #ef6c00; -fx-font-weight: bold; }
+.severity-CRITICAL { -fx-text-fill: #c62828; -fx-font-weight: bold; }
+.incident-OPEN { -fx-text-fill: #c62828; }
+.incident-IN_PROGRESS { -fx-text-fill: #1565c0; }
+.incident-CLOSED { -fx-text-fill: #78909c; }
+
+/* Le texte coloré reste lisible sur une ligne sélectionnée */
+.table-row-cell:selected .table-cell {
+    -fx-text-fill: white;
+}
+
+.alert-event {
+    -fx-text-fill: #c62828;
+}
+.button.danger {
+    -fx-text-fill: #c62828;
+}

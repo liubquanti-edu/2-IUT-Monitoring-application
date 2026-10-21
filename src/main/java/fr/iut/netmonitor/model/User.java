@@ -29,8 +29,12 @@ public class User implements Serializable {
         passwordHash = PasswordHasher.hash(Objects.requireNonNull(newPassword));
     }
 
+    public boolean can(Permission permission) {
+        return role.can(permission);
+    }
+
     public boolean canHandleIncidents() {
-        return role == UserRole.ADMIN || role == UserRole.TECHNICIAN;
+        return can(Permission.HANDLE_INCIDENTS);
     }
 
     public boolean isAdmin() {

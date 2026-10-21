@@ -1,48 +1,51 @@
 package fr.iut.netmonitor.cli;
 
+import fr.iut.netmonitor.exception.AuthenticationException;
 import fr.iut.netmonitor.exception.NetMonitorException;
 import fr.iut.netmonitor.model.DeviceType;
 import fr.iut.netmonitor.model.NetworkDevice;
-import fr.iut.netmonitor.persistence.DeviceStore;
-import fr.iut.netmonitor.persistence.SerializedDeviceStore;
+import fr.iut.netmonitor.model.Permission;
+import fr.iut.netmonitor.model.User;
+import fr.iut.netmonitor.service.AccessControl;
+import fr.iut.netmonitor.service.NetMonitorContext;
 import fr.iut.netmonitor.service.NetworkDeviceManager;
 
-import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Scanner;
 
-/** Première version de NetMonitor : menu texte, données en mémoire sauvegardées par sérialisation. */
+/** Version texte de NetMonitor (l'interface principale est désormais l'application JavaFX). */
 public class Main {
 
-    private static final Path DATA_FILE = Path.of("data", "devices.ser");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
+    private static final int MAX_LOGIN_ATTEMPTS = 3;
 
     private final Scanner scanner = new Scanner(System.in);
-    private final DeviceStore store;
+    private final NetMonitorContext context;
     private final NetworkDeviceManager manager;
+    private User user;
 
-    public Main(DeviceStore store, NetworkDeviceManager manager) {
-        this.store = store;
-        this.manager = manager;
+    public Main(NetMonitorContext context) {
+        this.context = context;
+        this.manager = context.devices();
     }
 
     public static void main(String[] args) {
-        DeviceStore store = new SerializedDeviceStore(DATA_FILE);
-        NetworkDeviceManager manager;
-        try {
-            manager = new NetworkDeviceManager(store.load());
-        } catch (NetMonitorException e) {
-            System.out.println("Attention : " + e.getMessage() + " Démarrage avec une liste vide.");
-            manager = new NetworkDeviceManager();
+        NetMonitorContext context = NetMonitorContext.open();
+        if (context.getLoadWarning() != null) {
+            System.out.println("Attention : " + context.getLoadWarning());
         }
-        new Main(store, manager).run();
+        new Main(context).run();
     }
 
     public void run() {
+        if (!login()) {
+            System.out.println("Trop de tentatives. Au revoir.");
+            return;
+        }
         while (true) {
             System.out.println();
-            System.out.println("=== NetMonitor ===");
+            System.out.println("=== NetMonitor === (" + user.getUsername() + " - " + user.getRole().getLabel() + ")");
             System.out.println("1. Ajouter un équipement");
             System.out.println("2. Afficher les équipements");
             System.out.println("3. Rechercher");
@@ -55,7 +58,7 @@ public class Main {
                 switch (choice) {
                     case "1" -> add();
                     case "2" -> print(manager.listDevices());
-                    case "3" -> print(manager.search(prompt("Nom, IP, type ou état")));
+                    case "3" -> print(manager.search(prompt("Nom, IP, localisation, type ou état")));
                     case "4" -> update();
                     case "5" -> remove();
                     case "6" -> detail();
@@ -71,25 +74,44 @@ public class Main {
         }
     }
 
+    private boolean login() {
+        for (int attempt = 0; attempt < MAX_LOGIN_ATTEMPTS; attempt++) {
+            String login = prompt("Login");
+            String password = prompt("Mot de passe");
+            try {
+                user = context.users().authenticate(login, password);
+                return true;
+            } catch (AuthenticationException e) {
+                System.out.println(e.getMessage());
+            }
+        }
+        return false;
+    }
+
     private void add() throws NetMonitorException {
+        AccessControl.require(user, Permission.EDIT_DEVICES);
         String name = prompt("Nom");
         String ip = prompt("Adresse IP");
         DeviceType type = askType();
-        NetworkDevice device = manager.addDevice(name, ip, type);
+        String location = prompt("Localisation");
+        NetworkDevice device = manager.addDevice(name, ip, type, location);
         System.out.println("Équipement ajouté : " + device);
     }
 
     private void update() throws NetMonitorException {
+        AccessControl.require(user, Permission.EDIT_DEVICES);
         NetworkDevice device = manager.findDevice(askId());
         System.out.println("Laisser vide pour conserver la valeur actuelle.");
         String name = promptOrDefault("Nom", device.getName());
         String ip = promptOrDefault("Adresse IP", device.getIpAddress());
         DeviceType type = askTypeOrDefault(device.getType());
-        manager.updateDevice(device.getId(), name, ip, type);
+        String location = promptOrDefault("Localisation", device.getLocation());
+        manager.updateDevice(device.getId(), name, ip, type, location);
         System.out.println("Équipement modifié : " + device);
     }
 
     private void remove() throws NetMonitorException {
+        AccessControl.require(user, Permission.EDIT_DEVICES);
         int id = askId();
         NetworkDevice device = manager.findDevice(id);
         if (prompt("Supprimer " + device.getName() + " ? (o/n)").equalsIgnoreCase("o")) {
@@ -103,6 +125,7 @@ public class Main {
         System.out.println("Équipement : " + d.getName());
         System.out.println("Type       : " + d.getType().getLabel());
         System.out.println("Adresse IP : " + d.getIpAddress());
+        System.out.println("Localisation : " + (d.getLocation().isEmpty() ? "-" : d.getLocation()));
         System.out.println("État       : " + d.getStatus());
         System.out.println("Dernier contact : " + (d.getLastContact() == null ? "jamais" : TIME.format(d.getLastContact())));
         System.out.println("Mesures    : " + d.getMeasurements().size());
@@ -112,7 +135,7 @@ public class Main {
 
     private void save() {
         try {
-            store.save(manager.listDevices());
+            context.save();
             System.out.println("Données enregistrées. Au revoir !");
         } catch (NetMonitorException e) {
             System.out.println("Erreur : " + e.getMessage());
@@ -124,10 +147,11 @@ public class Main {
             System.out.println("Aucun équipement.");
             return;
         }
-        System.out.printf("%-4s %-12s %-14s %-16s %-7s %s%n", "ID", "Nom", "Type", "Adresse IP", "État", "Dernier contact");
+        System.out.printf("%-4s %-12s %-14s %-16s %-7s %-19s %s%n",
+                "ID", "Nom", "Type", "Adresse IP", "État", "Dernier contact", "Localisation");
         for (NetworkDevice d : list) {
             String last = d.getLastContact() == null ? "-" : TIME.format(d.getLastContact());
-            System.out.println(d + " " + last);
+            System.out.printf("%s %-19s %s%n", d, last, d.getLocation());
         }
     }
 

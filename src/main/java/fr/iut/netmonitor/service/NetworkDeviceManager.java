@@ -29,7 +29,11 @@ public class NetworkDeviceManager {
         nextId = initial.stream().mapToInt(NetworkDevice::getId).max().orElse(0) + 1;
     }
 
-    public synchronized NetworkDevice addDevice(String name, String ipAddress, DeviceType type)
+    public NetworkDevice addDevice(String name, String ipAddress, DeviceType type) throws ValidationException {
+        return addDevice(name, ipAddress, type, "");
+    }
+
+    public synchronized NetworkDevice addDevice(String name, String ipAddress, DeviceType type, String location)
             throws ValidationException {
         String cleanName = Validator.requireNotBlank(name, "nom");
         String cleanIp = Validator.requireIpv4(ipAddress);
@@ -38,7 +42,7 @@ public class NetworkDeviceManager {
         }
         checkUnique(cleanName, cleanIp, -1);
 
-        NetworkDevice device = new NetworkDevice(cleanName, cleanIp, type);
+        NetworkDevice device = new NetworkDevice(cleanName, cleanIp, type, clean(location));
         device.setId(nextId++);
         devices.add(device);
         return device;
@@ -49,6 +53,12 @@ public class NetworkDeviceManager {
     }
 
     public synchronized NetworkDevice updateDevice(int id, String name, String ipAddress, DeviceType type)
+            throws NotFoundException, ValidationException {
+        return updateDevice(id, name, ipAddress, type, findDevice(id).getLocation());
+    }
+
+    public synchronized NetworkDevice updateDevice(int id, String name, String ipAddress, DeviceType type,
+                                                   String location)
             throws NotFoundException, ValidationException {
         NetworkDevice device = findDevice(id);
         String cleanName = Validator.requireNotBlank(name, "nom");
@@ -61,6 +71,7 @@ public class NetworkDeviceManager {
         device.setName(cleanName);
         device.setIpAddress(cleanIp);
         device.setType(type);
+        device.setLocation(clean(location));
         return device;
     }
 
@@ -77,16 +88,24 @@ public class NetworkDeviceManager {
         return copy;
     }
 
-    /** Recherche par nom, adresse IP, type ou état (insensible à la casse, correspondance partielle). */
+    /**
+     * Recherche par nom, adresse IP, localisation, type ou état
+     * (insensible à la casse, correspondance partielle sauf pour l'état).
+     */
     public synchronized List<NetworkDevice> search(String query) {
         String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         return listDevices().stream()
                 .filter(d -> d.getName().toLowerCase(Locale.ROOT).contains(q)
                         || d.getIpAddress().contains(q)
+                        || d.getLocation().toLowerCase(Locale.ROOT).contains(q)
                         || d.getType().name().toLowerCase(Locale.ROOT).contains(q)
                         || d.getType().getLabel().toLowerCase(Locale.ROOT).contains(q)
                         || d.getStatus().name().toLowerCase(Locale.ROOT).equals(q))
                 .toList();
+    }
+
+    private static String clean(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private void checkUnique(String name, String ip, int ignoredId) throws ValidationException {
