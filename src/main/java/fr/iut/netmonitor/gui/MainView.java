@@ -35,7 +35,7 @@ public class MainView {
         title.getStyleClass().add("app-title");
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        Label who = new Label(user.getUsername() + " - " + user.getRole().getLabel());
+        Label who = new Label(user.getRole().getLabel());
         who.getStyleClass().add("user-label");
         HBox header = new HBox(title, spacer, who);
         header.setAlignment(Pos.CENTER_LEFT);
