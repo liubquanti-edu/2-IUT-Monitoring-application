@@ -10,7 +10,7 @@ src/main/java/fr/iut/netmonitor/
 ├── service/      NetworkDeviceManager (équipements), UserManager (comptes), IncidentManager (incidents),
 │                 MonitoringService (seuils + heartbeat), AgentSimulator (agents simulés),
 │                 DashboardStats (indicateurs), AccessControl (droits), NetMonitorContext (chargement/enregistrement)
-├── persistence/  DataStore + SerializedDataStore (fichier data/netmonitor.ser)
+├── persistence/  DataStore + MySqlDataStore (base MySQL, JDBC) et SerializedDataStore (fichier data/netmonitor.ser)
 ├── exception/    NetMonitorException, ValidationException, NotFoundException,
 │                 AuthenticationException, AccessDeniedException
 ├── util/         Validator (nom, IPv4), PasswordHasher (SHA-256 salé)
@@ -20,6 +20,27 @@ src/main/java/fr/iut/netmonitor/
 ```
 
 ## Lancer
+
+### En un clic, sans droits administrateur (Windows)
+
+Double-cliquer sur **`netmonitor.cmd`**. Ce fichier est autonome : il peut être copié seul (par exemple depuis
+une clé USB) sur n'importe quel PC. Il affiche l'avancement de chaque étape (`DONE`, `IN PROCESS`, `IN QUEUE`,
+`ERROR`), installe tout dans le profil utilisateur puis lance l'application :
+
+1. **Git** : Git portable (`%USERPROFILE%\portable-git`, ajouté au PATH utilisateur) sauf si Git est déjà
+   présent, et réglage de `user.name` / `user.email` ;
+2. **Repo** : clonage du dépôt dans `%USERPROFILE%-IUT-Monitoring-application`, ou `git pull` s'il existe déjà ;
+3. **MySQL** : serveur MySQL portable 8.4 (archive ZIP, `%USERPROFILE%\portable-mysql`), initialisé au premier
+   lancement, démarré en arrière-plan sur `127.0.0.1:3307`, base `netmonitor`
+   (utilisateur `netmonitor` / mot de passe `netmonitor`) ;
+4. **JDK** : JDK 21 portable (`%USERPROFILE%\portable-jdk21`) ;
+5. **App** : NetMonitor (JavaFX). À la fermeture de l'application, le serveur MySQL est arrêté.
+
+Le premier lancement télécharge environ 450 Mo (MySQL ≈ 250 Mo). Les suivants démarrent directement.
+MySQL a besoin du runtime Visual C++ (`vcruntime140.dll`, `msvcp140.dll`), présent sur la plupart des PC ;
+sinon, copier ces DLL dans le dossier `bin` de MySQL.
+
+### Avec Maven
 
 Maven n'a pas besoin d'être installé : le wrapper (`mvnw` / `mvnw.cmd`) le télécharge au premier lancement.
 Seul un JDK 21 ou plus récent est nécessaire.
@@ -31,6 +52,15 @@ Seul un JDK 21 ou plus récent est nécessaire.
 ```
 
 Depuis un IDE, lancer la classe `fr.iut.netmonitor.gui.Launcher`.
+
+Sans configuration, les données sont enregistrées dans `data/netmonitor.ser`. Pour utiliser MySQL, définir
+les variables d'environnement (ou les propriétés système `netmonitor.db.url`, `.user`, `.password`) :
+
+```
+NETMONITOR_DB_URL=jdbc:mysql://127.0.0.1:3307/netmonitor?sslMode=DISABLED&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+NETMONITOR_DB_USER=netmonitor
+NETMONITOR_DB_PASSWORD=netmonitor
+```
 Sous Windows, si les accents s'affichent mal dans le menu texte : `chcp 65001` avant de lancer.
 
 ### Comptes créés au premier lancement
@@ -77,7 +107,14 @@ des incidents par gravité, les derniers incidents, et un champ de recherche (no
   leur historique (mesures, événements, alertes, incidents avec technicien et dates) et les comptes
   utilisateurs (mot de passe haché salé, jamais en clair). L'historique est limité aux 500 dernières
   mesures et événements par équipement.
-- **Quel format ?** La sérialisation Java (`ObjectOutputStream`) d'un objet `AppData` : simple, sans
+- **Où ?** Dans une base **MySQL** (`MySqlDataStore`) quand elle est configurée (c'est le cas avec
+  `netmonitor.cmd`), sinon dans le fichier `data/netmonitor.ser`. Tables : `users`, `devices`,
+  `measurements`, `events`, `incidents` (clé étrangère `device_id`, suppression en cascade), créées
+  automatiquement. Au premier lancement avec une base vide, le fichier `netmonitor.ser` existant est
+  importé dans MySQL. L'enregistrement remplace le contenu dans une transaction : en cas d'erreur, la base
+  reste intacte. Si la base n'a pas pu être lue au démarrage, l'enregistrement est refusé pour ne pas
+  l'écraser avec des données vides.
+- **Quel format (fichier) ?** La sérialisation Java (`ObjectOutputStream`) d'un objet `AppData` : simple, sans
   bibliothèque externe, et elle conserve les liens entre objets. L'interface `DataStore` permettra de
   passer à JDBC sans modifier le reste du code.
 - **Comment représenter un objet sous forme de données ?** Les classes du modèle implémentent

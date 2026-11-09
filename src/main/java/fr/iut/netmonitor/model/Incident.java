@@ -26,6 +26,26 @@ public class Incident implements Serializable {
         this.createdAt = LocalDateTime.now();
     }
 
+    private Incident(NetworkDevice device, Severity severity, String description, LocalDateTime createdAt) {
+        this.device = Objects.requireNonNull(device);
+        this.severity = Objects.requireNonNull(severity);
+        this.description = Objects.requireNonNull(description);
+        this.createdAt = Objects.requireNonNull(createdAt);
+    }
+
+    /** Recrée un incident lu depuis la base de données, dans l'état où il avait été enregistré. */
+    public static Incident restore(int id, NetworkDevice device, Severity severity, String description,
+                                   IncidentStatus status, LocalDateTime createdAt, LocalDateTime takenAt,
+                                   LocalDateTime closedAt, String assignedTo) {
+        Incident incident = new Incident(device, severity, description, createdAt);
+        incident.id = id;
+        incident.status = Objects.requireNonNull(status);
+        incident.takenAt = takenAt;
+        incident.closedAt = closedAt;
+        incident.assignedTo = assignedTo;
+        return incident;
+    }
+
     public void takeCharge(String technician) {
         if (status != IncidentStatus.OPEN) {
             throw new IllegalStateException("Seul un incident OPEN peut être pris en charge.");

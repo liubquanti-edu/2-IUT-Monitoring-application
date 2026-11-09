@@ -20,10 +20,14 @@ public class Event implements Serializable {
     }
 
     public Event(NetworkDevice device, EventLevel level, String description) {
+        this(device, level, description, LocalDateTime.now());
+    }
+
+    public Event(NetworkDevice device, EventLevel level, String description, LocalDateTime timestamp) {
         this.device = Objects.requireNonNull(device);
         this.level = Objects.requireNonNull(level);
         this.description = Objects.requireNonNull(description);
-        this.timestamp = LocalDateTime.now();
+        this.timestamp = Objects.requireNonNull(timestamp);
     }
 
     public int getId() {

@@ -47,6 +47,15 @@ public class NetworkDevice implements Serializable {
         }
     }
 
+    /**
+     * Rétablit l'état enregistré (lecture depuis la base) sans journaliser de changement d'état,
+     * à appeler après avoir rechargé les mesures.
+     */
+    public void restoreState(DeviceStatus status, LocalDateTime lastContact) {
+        this.status = Objects.requireNonNull(status);
+        this.lastContact = lastContact;
+    }
+
     public void addMeasurement(Measurement measurement) {
         measurements.add(measurement);
         if (measurements.size() > MAX_HISTORY) {

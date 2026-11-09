@@ -4,6 +4,7 @@ import fr.iut.netmonitor.exception.NetMonitorException;
 import fr.iut.netmonitor.exception.ValidationException;
 import fr.iut.netmonitor.persistence.AppData;
 import fr.iut.netmonitor.persistence.DataStore;
+import fr.iut.netmonitor.persistence.MySqlDataStore;
 import fr.iut.netmonitor.persistence.SerializedDataStore;
 
 import java.nio.file.Path;
@@ -31,8 +32,14 @@ public class NetMonitorContext {
         this.loadWarning = loadWarning;
     }
 
+    /**
+     * Base MySQL si la variable d'environnement {@value MySqlDataStore#ENV_URL} est définie
+     * (le fichier netmonitor.ser existant y est alors importé si la base est vide), sinon fichier sérialisé.
+     */
     public static NetMonitorContext open() {
-        return open(new SerializedDataStore(DATA_FILE, LEGACY_DEVICES_FILE), true);
+        DataStore file = new SerializedDataStore(DATA_FILE, LEGACY_DEVICES_FILE);
+        DataStore store = MySqlDataStore.fromEnvironment(file).<DataStore>map(s -> s).orElse(file);
+        return open(store, true);
     }
 
     /**
