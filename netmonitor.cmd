@@ -2,6 +2,7 @@
 @echo off
 setlocal
 set "NETMONITOR_SCRIPT=%~f0"
+set "NETMONITOR_MODE=%~1"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression ([IO.File]::ReadAllText($env:NETMONITOR_SCRIPT))"
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%" == "0" (
@@ -17,14 +18,21 @@ endlocal & exit /b %EXIT_CODE%
 #  This single file can be copied anywhere (e.g. from a USB stick) and run.
 #    Git    portable Git (%USERPROFILE%\portable-git) + user.name / user.email
 #    Repo   clone or update the project (%USERPROFILE%\2-IUT-Monitoring-application)
+#    Claude Claude Code CLI (%USERPROFILE%\.local\bin, added to the user PATH)
+#    VSCode VS Code (user install if missing) + Extension Pack for Java, project folder
+#           marked as trusted and opened
 #    MySQL  portable MySQL server (%USERPROFILE%\portable-mysql, 127.0.0.1:3307)
 #    JDK    portable JDK 21 (%USERPROFILE%\portable-jdk21)
 #    App    NetMonitor (JavaFX); the MySQL server is stopped when the app is closed
+#  "netmonitor.cmd run" (or run-netmonitor.cmd) only starts MySQL + the app, without
+#  installing or updating anything.
 # =====================================================================================
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$RunOnly = $env:NETMONITOR_MODE -eq 'run'
 
 $GitUserName  = 'Oleh Liubchenko'
 $GitUserEmail = 'dev@liubquanti.click'
@@ -43,9 +51,19 @@ $MySqlPort    = 3307
 $DbName       = 'netmonitor'
 $DbUser       = 'netmonitor'
 $DbPassword   = 'netmonitor'
+$ClaudeBin    = Join-Path $env:USERPROFILE '.local\bin'
+$JavaPackId   = 'vscjava.vscode-java-pack'
+
+# In run-only mode, use the project the script lives in (if it is one).
+if ($RunOnly) {
+    $scriptDir = Split-Path $env:NETMONITOR_SCRIPT -Parent
+    if (Test-Path (Join-Path $scriptDir 'pom.xml')) { $ProjectDir = $scriptDir }
+}
 
 # ----------------------------------------------------------------------------- status display
-$Steps = [ordered]@{ Git = 'IN QUEUE'; Repo = 'IN QUEUE'; MySQL = 'IN QUEUE'; JDK = 'IN QUEUE'; App = 'IN QUEUE' }
+$Steps = [ordered]@{}
+$stepNames = if ($RunOnly) { 'MySQL', 'JDK', 'App' } else { 'Git', 'Repo', 'Claude', 'VSCode', 'MySQL', 'JDK', 'App' }
+foreach ($name in $stepNames) { $Steps[$name] = 'IN QUEUE' }
 $Log = New-Object System.Collections.Generic.List[string]
 
 # -NoClear keeps what is already on screen (e.g. Maven errors) and prints the table below it.
@@ -60,6 +78,7 @@ function Show-Status([switch]$NoClear) {
             'DONE'       { 'Green' }
             'IN PROCESS' { 'Yellow' }
             'RUNNING'    { 'Yellow' }
+            'WARNING'    { 'Yellow' }
             'ERROR'      { 'Red' }
             default      { 'DarkGray' }
         }
@@ -198,6 +217,210 @@ function Update-Repository([string]$gitExe) {
     Write-Info "Project: $ProjectDir"
 }
 
+# ----------------------------------------------------------------------------- Claude Code
+function Install-Claude([string]$gitExe) {
+    $claudeExe = Join-Path $ClaudeBin 'claude.exe'
+    $existing = Get-Command claude.exe -ErrorAction SilentlyContinue
+    if (-not (Test-Path $claudeExe) -and -not $existing) {
+        Write-Info 'Claude Code not found, installing (native installer, no admin rights)...'
+        $installer = Join-Path $env:TEMP 'claude-install.ps1'
+        Get-File 'https://claude.ai/install.ps1' $installer
+        try {
+            # Separate process: the official installer may call "exit".
+            $result = Invoke-Tool (Join-Path $PSHOME 'powershell.exe') @(
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $installer)
+        }
+        finally {
+            Remove-Item $installer -Force -ErrorAction SilentlyContinue
+        }
+        if (-not (Test-Path $claudeExe)) { throw "Claude Code installation failed:`n$($result.Output)" }
+    }
+    if (Test-Path $claudeExe) { Add-ToUserPath $ClaudeBin }
+
+    # Claude Code on Windows needs Git Bash: point it to the (portable) Git found above.
+    $bash = Join-Path (Split-Path (Split-Path $gitExe -Parent) -Parent) 'bin\bash.exe'
+    if ((Test-Path $bash) -and -not [Environment]::GetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', 'User')) {
+        [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $bash, 'User')
+        $env:CLAUDE_CODE_GIT_BASH_PATH = $bash
+    }
+    $found = if (Test-Path $claudeExe) { $claudeExe } else { $existing.Source }
+    Write-Info "Claude Code: $found"
+}
+
+# ----------------------------------------------------------------------------- VS Code
+function Find-VSCode {
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd')
+        (Join-Path $env:ProgramFiles 'Microsoft VS Code\bin\code.cmd')
+    )
+    $command = Get-Command code.cmd -ErrorAction SilentlyContinue
+    if ($command) { $candidates = @($command.Source) + $candidates }
+    return $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+
+function Install-VSCode {
+    $code = Find-VSCode
+    if ($code) { return $code }
+
+    Write-Info 'VS Code not found, installing the user version (no admin rights)...'
+    $setup = Join-Path $env:TEMP 'VSCodeUserSetup-x64.exe'
+    Get-File 'https://update.code.visualstudio.com/latest/win32-x64-user/stable' $setup
+    $process = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList `
+        '/VERYSILENT /NORESTART /SUPPRESSMSGBOXES /MERGETASKS=!runcode,addtopath'
+    Remove-Item $setup -Force -ErrorAction SilentlyContinue
+    if ($process.ExitCode -ne 0) { throw "VS Code setup failed with exit code $($process.ExitCode)." }
+
+    $code = Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'
+    if (-not (Test-Path $code)) { throw 'code.cmd was not found after the VS Code installation.' }
+    Add-ToUserPath (Split-Path $code -Parent)
+    return $code
+}
+
+function Install-JavaExtensionPack([string]$code) {
+    $list = Invoke-Tool $code @('--list-extensions')
+    if ($list.Output -match "(?im)^\s*$([regex]::Escape($JavaPackId))\s*$") {
+        Write-Info 'Extension Pack for Java already installed.'
+        return
+    }
+    Write-Info 'Installing Extension Pack for Java...'
+    $install = Invoke-Tool $code @('--install-extension', $JavaPackId)
+    if ($install.ExitCode -ne 0) { throw "Could not install ${JavaPackId}:`n$($install.Output)" }
+    Write-Info 'Extension Pack for Java installed.'
+}
+
+# Minimal SQLite access through winsqlite3.dll (part of Windows 10/11, no install needed).
+function Initialize-WinSqlite {
+    if ('NetMonitorSqlite' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class NetMonitorSqlite {
+    [DllImport("winsqlite3.dll")] static extern int sqlite3_open_v2(byte[] filename, out IntPtr db, int flags, IntPtr vfs);
+    [DllImport("winsqlite3.dll")] static extern int sqlite3_close(IntPtr db);
+    [DllImport("winsqlite3.dll")] static extern int sqlite3_busy_timeout(IntPtr db, int ms);
+    [DllImport("winsqlite3.dll")] static extern int sqlite3_prepare_v2(IntPtr db, byte[] sql, int n, out IntPtr stmt, IntPtr tail);
+    [DllImport("winsqlite3.dll")] static extern int sqlite3_bind_text(IntPtr stmt, int i, byte[] text, int n, IntPtr destructor);
+    [DllImport("winsqlite3.dll")] static extern int sqlite3_step(IntPtr stmt);
+    [DllImport("winsqlite3.dll")] static extern IntPtr sqlite3_column_blob(IntPtr stmt, int col);
+    [DllImport("winsqlite3.dll")] static extern int sqlite3_column_bytes(IntPtr stmt, int col);
+    [DllImport("winsqlite3.dll")] static extern int sqlite3_finalize(IntPtr stmt);
+    [DllImport("winsqlite3.dll")] static extern IntPtr sqlite3_errmsg(IntPtr db);
+    static readonly IntPtr Transient = new IntPtr(-1);
+    static byte[] Z(string s) { return Encoding.UTF8.GetBytes(s + "\0"); }
+    static string Err(IntPtr db) { return Marshal.PtrToStringAnsi(sqlite3_errmsg(db)); }
+    static IntPtr Prepare(IntPtr db, string sql) {
+        IntPtr st;
+        if (sqlite3_prepare_v2(db, Z(sql), -1, out st, IntPtr.Zero) != 0) throw new Exception(Err(db));
+        return st;
+    }
+    static void Bind(IntPtr st, int i, string value) {
+        byte[] b = Encoding.UTF8.GetBytes(value);
+        sqlite3_bind_text(st, i, b, b.Length, Transient);
+    }
+    static IntPtr Open(string path) {
+        IntPtr db;
+        if (sqlite3_open_v2(Z(path), out db, 0x02 | 0x04, IntPtr.Zero) != 0) throw new Exception("Cannot open " + path);
+        sqlite3_busy_timeout(db, 5000);
+        IntPtr st = Prepare(db, "CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)");
+        try { if (sqlite3_step(st) != 101) throw new Exception(Err(db)); } finally { sqlite3_finalize(st); }
+        return db;
+    }
+    public static string Get(string path, string key) {
+        IntPtr db = Open(path);
+        try {
+            IntPtr st = Prepare(db, "SELECT value FROM ItemTable WHERE key = ?");
+            try {
+                Bind(st, 1, key);
+                if (sqlite3_step(st) != 100) return null;
+                int n = sqlite3_column_bytes(st, 0);
+                byte[] buf = new byte[n];
+                if (n > 0) Marshal.Copy(sqlite3_column_blob(st, 0), buf, 0, n);
+                return Encoding.UTF8.GetString(buf);
+            } finally { sqlite3_finalize(st); }
+        } finally { sqlite3_close(db); }
+    }
+    public static void Set(string path, string key, string value) {
+        IntPtr db = Open(path);
+        try {
+            IntPtr st = Prepare(db, "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)");
+            try {
+                Bind(st, 1, key);
+                Bind(st, 2, value);
+                if (sqlite3_step(st) != 101) throw new Exception(Err(db));
+            } finally { sqlite3_finalize(st); }
+        } finally { sqlite3_close(db); }
+    }
+}
+'@
+}
+
+# Adds the project folder to VS Code's trusted folders (stored in its global state database).
+function Set-VSCodeTrust([string]$folder) {
+    $full = [IO.Path]::GetFullPath($folder).TrimEnd('\')
+    $drive = $full.Substring(0, 1).ToLowerInvariant()
+    $rest = $full.Substring(2) -replace '\\', '/'                          # "/Users/.../project"
+    $uriPath = "/${drive}:$rest"
+    $external = "file:///${drive}%3A" + (($rest -split '/' | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/')
+    $fsPath = "${drive}:" + ($rest -replace '/', '\')
+
+    $stateDir = Join-Path $env:APPDATA 'Code\User\globalStorage'
+    $stateDb = Join-Path $stateDir 'state.vscdb'
+    $key = 'content.trust.model.key'
+    New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+    Initialize-WinSqlite
+
+    $entries = New-Object System.Collections.Generic.List[object]
+    $json = [NetMonitorSqlite]::Get($stateDb, $key)
+    if ($json) {
+        foreach ($info in @((ConvertFrom-Json $json).uriTrustInfo)) {
+            if ($null -eq $info) { continue }
+            if ($info.uri.scheme -eq 'file' -and $info.uri.path -ieq $uriPath) {
+                if ($info.trusted) { Write-Info 'Project folder already trusted in VS Code.'; return }
+                continue                                                     # replaced below
+            }
+            $entries.Add($info)
+        }
+    }
+    $uri = [ordered]@{ '$mid' = 1; fsPath = $fsPath; external = $external; path = $uriPath; scheme = 'file' }
+    $entries.Add([pscustomobject][ordered]@{ uri = [pscustomobject]$uri; trusted = $true })
+    $value = ConvertTo-Json -InputObject ([pscustomobject]@{ uriTrustInfo = $entries.ToArray() }) -Depth 10 -Compress
+    [NetMonitorSqlite]::Set($stateDb, $key, $value)
+    if (Get-Process Code -ErrorAction SilentlyContinue) {
+        Write-Info 'Project folder trusted in VS Code (applies after VS Code is restarted).'
+    }
+    else {
+        Write-Info 'Project folder trusted in VS Code.'
+    }
+}
+
+function Open-VSCodeProject([string]$code) {
+    # VS Code just focuses the window if the folder is already open.
+    Start-Process -FilePath $code -ArgumentList (Join-Arguments @($ProjectDir)) -WindowStyle Hidden
+    Write-Info "VS Code opened on $ProjectDir"
+}
+
+function Initialize-VSCode {
+    $code = Install-VSCode
+    Write-Info "VS Code: $code"
+    Install-JavaExtensionPack $code
+    Set-VSCodeTrust $ProjectDir
+    Open-VSCodeProject $code
+}
+
+# Runs an optional step: a failure is reported as WARNING and does not stop the launch.
+function Invoke-OptionalStep([string]$name, [scriptblock]$action) {
+    Set-Step $name 'IN PROCESS'
+    try {
+        & $action
+        Set-Step $name 'DONE'
+    }
+    catch {
+        $Log.Add("WARNING: ${name}: $($_.Exception.Message)")
+        Set-Step $name 'WARNING'
+    }
+}
+
 # ----------------------------------------------------------------------------- MySQL
 $MySqlClientArgs = @('-u', 'root', '-h', '127.0.0.1', '-P', "$MySqlPort")
 
@@ -209,6 +432,7 @@ function Test-MySqlRunning {
 function Install-MySql {
     $mysqld = Join-Path $MySqlHome 'bin\mysqld.exe'
     if (-not (Test-Path $mysqld)) {
+        if ($RunOnly) { throw "MySQL is not installed in $MySqlRoot. Run netmonitor.cmd once first." }
         Write-Info "Portable MySQL $MySqlVersion not found, downloading (about 250 MB)..."
         $zip = Join-Path $env:TEMP "mysql-$MySqlVersion-winx64.zip"
         Get-File $MySqlUrl $zip
@@ -302,6 +526,7 @@ function Stop-MySql {
 function Install-Jdk {
     $jdk = Get-ChildItem -Path $JdkRoot -Directory -Filter 'jdk-*' -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $jdk) {
+        if ($RunOnly) { throw "JDK 21 is not installed in $JdkRoot. Run netmonitor.cmd once first." }
         Write-Info 'Portable JDK 21 not found, downloading...'
         $zip = Join-Path $env:TEMP 'netmonitor-jdk21.zip'
         Get-File 'https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse' $zip
@@ -323,15 +548,24 @@ $exitCode = 0
 try {
     Show-Status
 
-    $current = 'Git'; Set-Step $current 'IN PROCESS'
-    $git = Install-Git
-    Write-Info "Git: $git"
-    Set-GitIdentity $git
-    Set-Step $current 'DONE'
+    if (-not $RunOnly) {
+        $current = 'Git'; Set-Step $current 'IN PROCESS'
+        $git = Install-Git
+        Write-Info "Git: $git"
+        Set-GitIdentity $git
+        Set-Step $current 'DONE'
 
-    $current = 'Repo'; Set-Step $current 'IN PROCESS'
-    Update-Repository $git
-    Set-Step $current 'DONE'
+        $current = 'Repo'; Set-Step $current 'IN PROCESS'
+        Update-Repository $git
+        Set-Step $current 'DONE'
+
+        $current = $null
+        Invoke-OptionalStep 'Claude' { Install-Claude $git }
+        Invoke-OptionalStep 'VSCode' { Initialize-VSCode }
+    }
+    elseif (-not (Test-Path (Join-Path $ProjectDir 'pom.xml'))) {
+        throw "pom.xml not found in $ProjectDir. Run netmonitor.cmd once first."
+    }
 
     $current = 'MySQL'; Set-Step $current 'IN PROCESS'
     Install-MySql

@@ -25,16 +25,26 @@ src/main/java/fr/iut/netmonitor/
 
 Double-cliquer sur **`netmonitor.cmd`**. Ce fichier est autonome : il peut être copié seul (par exemple depuis
 une clé USB) sur n'importe quel PC. Il affiche l'avancement de chaque étape (`DONE`, `IN PROCESS`, `IN QUEUE`,
-`ERROR`), installe tout dans le profil utilisateur puis lance l'application :
+`WARNING`, `ERROR`), installe tout dans le profil utilisateur puis lance l'application :
 
 1. **Git** : Git portable (`%USERPROFILE%\portable-git`, ajouté au PATH utilisateur) sauf si Git est déjà
    présent, et réglage de `user.name` / `user.email` ;
-2. **Repo** : clonage du dépôt dans `%USERPROFILE%-IUT-Monitoring-application`, ou `git pull` s'il existe déjà ;
-3. **MySQL** : serveur MySQL portable 8.4 (archive ZIP, `%USERPROFILE%\portable-mysql`), initialisé au premier
+2. **Repo** : clonage du dépôt dans `%USERPROFILE%\2-IUT-Monitoring-application`, ou `git pull` s'il existe déjà ;
+3. **Claude** : Claude Code CLI (installateur officiel, `%USERPROFILE%\.local\bin`, ajouté au PATH utilisateur)
+   s'il n'est pas déjà installé ; `CLAUDE_CODE_GIT_BASH_PATH` pointe vers le Git Bash trouvé à l'étape 1 ;
+4. **VSCode** : VS Code (version utilisateur, si absent), extension *Extension Pack for Java*, dossier du projet
+   ajouté aux dossiers de confiance (*trusted*) puis ouvert dans VS Code ;
+5. **MySQL** : serveur MySQL portable 8.4 (archive ZIP, `%USERPROFILE%\portable-mysql`), initialisé au premier
    lancement, démarré en arrière-plan sur `127.0.0.1:3307`, base `netmonitor`
    (utilisateur `netmonitor` / mot de passe `netmonitor`) ;
-4. **JDK** : JDK 21 portable (`%USERPROFILE%\portable-jdk21`) ;
-5. **App** : NetMonitor (JavaFX). À la fermeture de l'application, le serveur MySQL est arrêté.
+6. **JDK** : JDK 21 portable (`%USERPROFILE%\portable-jdk21`) ;
+7. **App** : NetMonitor (JavaFX). À la fermeture de l'application, le serveur MySQL est arrêté.
+
+Les étapes **Claude** et **VSCode** sont facultatives : en cas d'échec elles passent en `WARNING` et
+l'application est quand même lancée.
+
+Pour un lancement rapide une fois l'installation faite, double-cliquer sur **`run-netmonitor.cmd`** (ou
+`netmonitor.cmd run`) : seuls MySQL et l'application sont démarrés, sans téléchargement ni mise à jour.
 
 Le premier lancement télécharge environ 450 Mo (MySQL ≈ 250 Mo). Les suivants démarrent directement.
 MySQL a besoin du runtime Visual C++ (`vcruntime140.dll`, `msvcp140.dll`), présent sur la plupart des PC ;
